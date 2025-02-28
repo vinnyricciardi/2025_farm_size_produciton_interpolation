@@ -25,11 +25,13 @@ This document provides boiler-plate code to compare two methods to estimate crop
 
 ## Pareto Interpolation Method
 
-The Pareto interpolation method is a statistical approach typically used to estimate distribution characteristics, particularly for phenomena with a heavy-tailed distribution. In agricultural contexts, it assumes that farm sizes follow a power-law distribution, characterized by a small number of large farms producing a disproportionate amount of agricultural output. The method is based on the Pareto distribution, which is defined by two key parameters: the minimum value (xmin) and the shape parameter ($\alpha$). Researchers estimate these parameters using techniques like maximum likelihood estimation to model how farm sizes are distributed, with a particular focus on capturing the characteristics of larger farms that are often underrepresented in survey data.
+The Pareto interpolation method is a statistical approach typically used to estimate distribution characteristics, particularly for phenomena with a heavy-tailed distribution. For our purpose, it assumes that farm sizes follow a power-law distribution, characterized by a small number of large farms producing a disproportionate amount of agricultural output. The method is based on the Pareto distribution, which is defined by two key parameters: the minimum value (xmin) and the shape parameter ($\alpha$). Researchers estimate these parameters using techniques like maximum likelihood estimation to model how farm sizes are distributed, with a particular focus on capturing the characteristics of larger farms that are often underrepresented in survey data.
 
 ## Multilevel Regression with Poststratification (MRP)
 
 MRP offers a more robust alternative to Pareto interpolation by avoiding strict distributional assumptions and leveraging information across different strata. Unlike the Pareto method, which requires data to follow a specific power-law distribution, MRP can adapt to complex, real-world patterns by "borrowing strength" from similar observations across countries, regions, and farm types. Critically, MRP provides more comprehensive error estimates, allowing researchers to quantify uncertainty at multiple levels - from individual farm sizes to entire regional agricultural systems - which is significantly more challenging with traditional Pareto approaches.
+
+MRP will also enable us to include more countries with partial data into our analysis.
 
 While MRP has become a standard methodological approach in political science, public opinion research, and certain ecological applications, it remains relatively underutilized in the agricultural economics literature. The traditional reliance on Pareto interpolation in agricultural studies presents an opportunity to introduce the more flexible MRP framework, which may better capture the complex hierarchical structures inherent in farm production data. By applying this method from adjacent disciplines, we potentially offer methodological improvements to the standard toolkit for analyzing agricultural production distributions by farm size
 
@@ -161,6 +163,37 @@ head(synthetic_data)
 library(poweRlaw)
 library(ggplot2)
 
+calculate_pareto_ks <- function(data, alpha, xmin) {
+  # Caclulate the Kolmogorov-Smirnov statistic
+  # Generally, a lower KS statistic indicates a better fit. In practice:
+  # KS < 0.05: Excellent fit
+  # KS < 0.1: Good fit
+  # KS > 0.1: Poor fit
+  
+  # Sort the data
+  sorted_data <- sort(data[data >= xmin])
+  n <- length(sorted_data)
+  
+  # Calculate empirical CDF
+  ecdf_vals <- (1:n) / n
+  
+  # Calculate theoretical Pareto CDF: F(x) = 1 - (xmin/x)^alpha
+  pareto_cdf <- 1 - (xmin / sorted_data)^alpha
+  
+  # Calculate KS statistic: maximum absolute difference between empirical and theoretical CDF
+  ks_stat <- max(abs(ecdf_vals - pareto_cdf))
+  
+  # Calculate p-value (optional, requires the kolmogorov-smirnov distribution)
+  # p_value <- 1 - pkstwo(ks_stat * sqrt(n))
+  
+  return(list(
+    ks_statistic = ks_stat,
+    data_points = n,
+    alpha = alpha,
+    xmin = xmin
+  ))
+}
+
 # Function to test Pareto distribution fit
 test_pareto_fit <- function(data, min_size = 1) {
   # Prepare data for Pareto analysis
@@ -176,6 +209,13 @@ test_pareto_fit <- function(data, min_size = 1) {
   m_pl <- conpl$new(pareto_subset$total_kcal)
   est_pl <- estimate_pars(m_pl)
   m_pl$setPars(est_pl$pars)
+  
+  # Calculate KS statistic
+  ks_results <- calculate_pareto_ks(
+    data = pareto_subset$total_kcal,
+    alpha = est_pl$pars,
+    xmin = m_pl$getXmin()
+  )
   
   # Prepare plotting data
   plot_data <- data.frame(
@@ -204,7 +244,9 @@ test_pareto_fit <- function(data, min_size = 1) {
     plot = p,
     pareto_alpha = est_pl$pars,
     xmin = m_pl$getXmin(),
-    message = paste("Pareto alpha:", round(est_pl$pars, 2))
+    ks_statistic = ks_results$ks_statistic,
+    message = paste("Pareto alpha:", round(est_pl$pars, 2), 
+                    "| KS statistic:", round(ks_results$ks_statistic, 3))
   ))
 }
 
@@ -213,7 +255,13 @@ pareto_results <- test_pareto_fit(synthetic_data)
 print(pareto_results$message)
 ```
 
-If the Pareto alpha falls between 1 and 3, with a visual fit and low Kolmogorov-Smirnov statistic, the Pareto approach may be appropriate; but, I need to look into the literature to see if there is a common cutoff for agricultural economics literature. 
+If the Pareto alpha falls between 1 and 3, with a visual fit where the actual data (black) fits the Pareto distribution (red), and low Kolmogorov-Smirnov statistic (KS), the Pareto approach may be appropriate; but, I need to look into the literature to see if there is a common cutoff for agricultural economics literature. 
+
+Generally, a lower KS statistic indicates a better fit. In practice:
+
+- KS < 0.05: Excellent fit
+- KS < 0.1: Good fit
+- KS > 0.1: Poor fit
 
 ```{r pareto-plot}
 pareto_results$plot
